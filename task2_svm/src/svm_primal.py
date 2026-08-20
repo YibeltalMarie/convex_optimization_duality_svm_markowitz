@@ -17,7 +17,7 @@ import numpy as np
 import cvxpy as cp
 
 
-def fit_svm_primal(X, y, C=1.0, solver=cp.OSQP, verbose=False):
+def fit_svm_primal(X, y, C=1.0, solver=cp.CLARABEL, verbose=False):
     """
     Solve the primal Soft-Margin SVM QP.
 
@@ -28,8 +28,15 @@ def fit_svm_primal(X, y, C=1.0, solver=cp.OSQP, verbose=False):
     C : float
         Penalty parameter trading off margin width against total slack.
     solver : cvxpy solver
-        OSQP is a solver specialized for QPs -- a good default here since
-        we've proven this problem is exactly that.
+        CLARABEL (interior-point) is the default. OSQP (first-order/ADMM)
+        was tried first as the more "obvious" QP solver, but was observed to
+        report "solution may be inaccurate" / status "user_limit" at large C
+        (e.g. C=100), where the objective becomes badly scaled since
+        C*sum(xi) then dominates (1/2)||w||^2 by orders of magnitude.
+        CLARABEL's interior-point method converged cleanly (status "optimal",
+        feasibility violations ~1e-12) across the entire C sweep used in
+        this project -- see verification.py / the analysis notebook for the
+        convergence check that motivated this choice.
     verbose : bool
         If True, print solver iteration output.
 
@@ -65,7 +72,8 @@ def fit_svm_primal(X, y, C=1.0, solver=cp.OSQP, verbose=False):
 
     return {
         "w": w.value,
-        "b": b.value,
+        "b": float(b.value),  # CLARABEL returns a 0-d ndarray here, not a plain float;
+                               # cast explicitly so downstream round()/f-string usage works
         "xi": xi.value,
         "status": problem.status,
         "objective_value": problem.value,
